@@ -27,7 +27,9 @@ jobs:
           done
 
       - name: Workflows parse
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.8 -color
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.8 -color
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.8 -color app-template/.github/workflows/deploy.yml
 
   routing-test:
     runs-on: ubuntu-latest

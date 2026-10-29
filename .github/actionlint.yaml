@@ -1,0 +1,4 @@
+# Lets the workflow linter in CI know about the notebook's runner label.
+self-hosted-runner:
+  labels:
+    - home-server

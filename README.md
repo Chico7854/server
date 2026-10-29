@@ -131,6 +131,55 @@ The template includes an example Postgres database; delete it if the app doesn't
 `examples/sample-app/` is a tiny app that follows the contract. It's useful for trying
 the setup before a real app exists.
 
+### Connecting an app repo
+
+1. **Copy two files** from `app-template/` into the app repo, keeping their paths:
+   `docker-compose.yml` and `.github/workflows/deploy.yml`. In the workflow, set
+   `APP_NAME` and replace the placeholder test command.
+2. **Add the secrets.** In the app repo on GitHub, open **Settings → Environments** and
+   create two environments named exactly `test` and `production`. In each one, add a
+   secret named `DOTENV` holding that environment's settings, one per line:
+   ```
+   POSTGRES_PASSWORD=a-long-random-password
+   SOME_API_KEY=...
+   ```
+   Use different values for test and production. Secrets never go in git.
+   Optional: under `production`, turn on **Required reviewers** and add yourself, so a
+   production deploy waits for your click.
+3. **Register the notebook as a runner** for the app repo. On GitHub, open
+   **Settings → Actions → Runners → New self-hosted runner** and copy the token shown
+   after `--token` (it expires after an hour). Then on the notebook:
+   ```bash
+   ~/server/scripts/add-runner.sh Chico7854/<app-repo> <token>
+   ```
+   The runner starts on boot. Personal GitHub accounts can't share one runner across
+   repos, so do this once per app repo. **Only for private repos.**
+
+### Deploy flow
+
+| You do | What happens |
+| --- | --- |
+| Open a pull request | Tests run on GitHub's machines. Nothing is deployed. |
+| Merge or push to `main` | Tests run, then the app deploys to **test**. |
+| Push a version tag: `git tag v1.0.0 && git push origin v1.0.0` | Tests run, then that exact commit deploys to **production**. |
+
+Each deploy builds and starts the app, then waits up to 60 seconds for
+`/<name>/health`. If the app doesn't answer, the job fails and shows the app's recent
+logs in the Actions tab. Afterwards the secrets file is deleted from the notebook and
+unused Docker images are removed to save disk space.
+
+**Rolling back production:** in the app repo's **Actions** tab, open the run for an older
+tag (for example `v1.0.0`) and click **Re-run all jobs**. That deploys the older version again.
+
+### Trying it with the sample app
+
+Before a real app exists, you can test the whole flow with `examples/sample-app/`:
+create a new **private** repo, copy `app.py` and `Dockerfile` from `examples/sample-app/`
+plus the two template files into it, set `APP_NAME: sample` in the workflow, and follow
+the steps above (the `DOTENV` secret only needs `POSTGRES_PASSWORD=...`). Pushing to
+`main` should make `<test-url>/sample/` show `"env": "test"`, and pushing tag `v0.1.0`
+should make `<prod-url>/sample/` show `"env": "prod"`.
+
 ## Automated tests
 
 Every pull request and every push to `main` runs these on GitHub:
@@ -156,6 +205,8 @@ You can run them yourself on any machine with Docker, for example `./tests/routi
 | `urls.sh` says *tunnel is not running* | Run `docker compose up -d` in `~/server`, then `docker compose ps` to see what's up. |
 | Old URL stopped working | The notebook or tunnel restarted, so the URL changed. Run `./scripts/urls.sh` again. |
 | `App 'x' is not running in prod` | The app isn't deployed to that environment, or its container stopped. Run `docker ps` and check the app repo's Actions tab. |
+| Deploy job stays *Queued* / "Waiting for a runner" | The notebook's runner is offline. Check it with `sudo ~/actions-runners/<app-repo>/svc.sh status` and start it with `sudo ~/actions-runners/<app-repo>/svc.sh start`. |
+| Deploy fails at *Wait until healthy* | The app didn't answer `/<name>/health` in 60 s. Read the logs printed in that step. Common causes: wrong `APP_NAME`, app not listening on port 3000, or a missing value in `DOTENV`. |
 | `permission denied ... docker.sock` | Your user isn't in the `docker` group yet. Log out and back in after `install-docker.sh`. |
 
 ## Manual smoke test
@@ -168,3 +219,6 @@ notebook. After setup, or after changing anything here:
 - [ ] The prod URL shows `Server is running (prod)`, the test URL `Server is running (test)`
 - [ ] `<url>/healthz` shows `ok prod` / `ok test`
 - [ ] After `sudo reboot`, everything comes back by itself (URLs will be new)
+- [ ] `add-runner.sh` registers a runner for the sample app repo, and it shows as *Idle* on GitHub
+- [ ] Pushing to `main` in the sample app repo deploys it: `<test-url>/sample/` shows `"env": "test"`
+- [ ] Pushing tag `v0.1.0` deploys it to production: `<prod-url>/sample/` shows `"env": "prod"`
