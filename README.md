@@ -74,12 +74,47 @@ run it again. Apps are under a path on each URL, for example `https://<prod-url>
 Buying a domain later gives fixed URLs. Only the two tunnel services in
 `docker-compose.yml` need to change; apps and routing stay the same.
 
-## Automated test
+## Adding an app
 
-Every pull request and every push to `main` runs `tests/routing-test.sh` on GitHub.
-It starts the real front door (without the tunnels, which GitHub can't open) with a fake app and checks what visitors and apps see.
-You can run it yourself on any machine with Docker:
+Apps never change this repo. Each app lives in its own private repo and plugs in by
+following the contract below.
 
-```bash
-./tests/routing-test.sh
-```
+### The app contract
+
+The server runs any app that follows these rules:
+
+1. **Docker.** The app repo has a `Dockerfile` and a `docker-compose.yml`
+   (start from `app-template/docker-compose.yml`).
+2. **Name.** The app has a short name using lowercase letters, digits and dashes,
+   such as `investment`. It is served at `/<name>/`.
+3. **Port 3000.** The container that serves the app listens on port `3000`.
+4. **Path prefix.** Requests arrive with the full path, such as `/investment/api/users`.
+   The app serves its backend routes and its built frontend under `/<name>/`.
+   The `BASE_PATH` environment variable holds that prefix (`/investment`), and the front
+   door also sends it in the `X-Forwarded-Prefix` header. Frontend build tools have a
+   setting for this (for example `base` in Vite).
+5. **Health check.** `GET /<name>/health` returns HTTP 200 when the app is ready.
+   The deploy waits for it.
+6. **Network name.** The serving container joins the external `web` network with the
+   alias `<name>-prod` or `<name>-test`. The template does this for you.
+7. **Private repo.** Self-hosted runners must only serve private repos. On a public repo,
+   anyone opening a pull request could run code on the notebook.
+
+Each environment of each app is its own Compose project (`investment-prod`,
+`investment-test`), so prod and test have separate containers and separate databases.
+The template includes an example Postgres database; delete it if the app doesn't need one.
+
+`examples/sample-app/` is a tiny app that follows the contract. It's useful for trying
+the setup before a real app exists.
+
+## Automated tests
+
+Every pull request and every push to `main` runs these on GitHub:
+
+- `tests/routing-test.sh` starts the real front door (without the tunnels, which GitHub
+  can't open) with a fake app and checks what visitors and apps see.
+- `tests/app-template-test.sh` runs the sample app through the app template as both
+  prod and test and checks each one is reachable through the front door, with its own
+  containers and database.
+
+You can run them yourself on any machine with Docker, for example `./tests/routing-test.sh`.

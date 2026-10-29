@@ -1,0 +1,51 @@
+# Copy this file to the root of an app repo and adjust it.
+# The deploy workflow runs it with APP_NAME and APP_ENV set, for example
+# APP_NAME=investment APP_ENV=prod, so prod and test become separate Compose
+# projects with separate containers, networks and database volumes.
+
+name: ${APP_NAME:?set APP_NAME}-${APP_ENV:?set APP_ENV to prod or test}
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # Secrets for this environment, written by the deploy workflow from the
+    # GitHub Environment's DOTENV secret.
+    env_file: .env
+    environment:
+      PORT: 3000
+      BASE_PATH: /${APP_NAME}
+      APP_ENV: ${APP_ENV}
+      DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@db:5432/app
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      default:
+      web:
+        # The front door finds the app by this name. It must be <app-name>-<prod|test>.
+        aliases:
+          - ${APP_NAME}-${APP_ENV}
+
+  # Example database. Remove this service, DATABASE_URL and depends_on above
+  # (and the volume below) if the app needs no database.
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?put POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: app
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app"]
+      interval: 5s
+      retries: 10
+
+networks:
+  web:
+    external: true
+
+volumes:
+  db-data:
