@@ -24,7 +24,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Run tests
         run: echo "Replace this with the app's test command (npm test, pytest, ...)"
 
@@ -38,7 +38,7 @@ jobs:
     env:
       APP_ENV: ${{ github.ref_type == 'tag' && 'prod' || 'test' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Write .env from the environment's DOTENV secret
         env:

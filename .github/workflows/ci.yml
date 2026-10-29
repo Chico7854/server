@@ -10,13 +10,15 @@ jobs:
   static-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Compose files are valid
         run: |
           docker compose config --quiet
+          # The template reads the app's .env, which only exists on a real deploy.
+          touch app-template/.env
           APP_NAME=my-app APP_ENV=test POSTGRES_PASSWORD=x \
-            docker compose -f app-template/docker-compose.yml config --quiet --no-env-resolution
+            docker compose -f app-template/docker-compose.yml config --quiet
 
       - name: Shell scripts pass a syntax check
         run: |
@@ -34,13 +36,13 @@ jobs:
   routing-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Front door routes prod and test traffic
         run: ./tests/routing-test.sh
 
   app-template-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Sample app runs through the template in prod and test
         run: ./tests/app-template-test.sh
