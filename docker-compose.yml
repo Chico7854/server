@@ -17,6 +17,26 @@ services:
     networks:
       - web
 
+  # Each quick tunnel gets a random https://<words>.trycloudflare.com URL, which
+  # changes every time the container restarts. Run ./scripts/urls.sh to see them.
+  tunnel-prod:
+    image: cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://nginx:8080
+    depends_on:
+      - nginx
+    networks:
+      - web
+
+  tunnel-test:
+    image: cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://nginx:8081
+    depends_on:
+      - nginx
+    networks:
+      - web
+
 networks:
   # Apps join this network so Nginx can reach them by name.
   web:
