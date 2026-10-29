@@ -1,0 +1,48 @@
+# Checks this repo on every pull request and every push to main.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compose files are valid
+        run: |
+          docker compose config --quiet
+          # The template reads the app's .env, which only exists on a real deploy.
+          touch app-template/.env
+          APP_NAME=my-app APP_ENV=test POSTGRES_PASSWORD=x \
+            docker compose -f app-template/docker-compose.yml config --quiet
+
+      - name: Shell scripts pass a syntax check
+        run: |
+          for f in scripts/*.sh tests/*.sh; do
+            [ -e "$f" ] || continue
+            bash -n "$f"
+            shellcheck --severity=warning "$f"
+          done
+
+      - name: Workflows parse
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.8 -color
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.8 -color app-template/.github/workflows/deploy.yml
+
+  routing-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Front door routes prod and test traffic
+        run: ./tests/routing-test.sh
+
+  app-template-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Sample app runs through the template in prod and test
+        run: ./tests/app-template-test.sh

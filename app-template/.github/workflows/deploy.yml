@@ -1,0 +1,73 @@
+# Copy to .github/workflows/deploy.yml in an app repo and set APP_NAME below.
+#
+#   pull request        -> tests only, on GitHub's machines
+#   push to main        -> tests, then deploy to test on the notebook
+#   push tag v1.2.3     -> tests, then deploy that exact commit to production
+#
+# Needs: a self-hosted runner with the label "home-server" (scripts/add-runner.sh
+# in the server repo) and GitHub Environments "test" and "production", each with
+# a DOTENV secret.
+
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+env:
+  # Lowercase letters, digits and dashes. The app is served at /<APP_NAME>/.
+  APP_NAME: my-app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run tests
+        run: echo "Replace this with the app's test command (npm test, pytest, ...)"
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, home-server]
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'test' }}
+    # One deploy per environment at a time; a newer one waits for the running one.
+    concurrency: deploy-${{ github.ref_type == 'tag' && 'prod' || 'test' }}
+    env:
+      APP_ENV: ${{ github.ref_type == 'tag' && 'prod' || 'test' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Write .env from the environment's DOTENV secret
+        env:
+          DOTENV: ${{ secrets.DOTENV }}
+        run: |
+          umask 077
+          printf '%s\n' "$DOTENV" > .env
+
+      - name: Build and start
+        run: docker compose up -d --build --remove-orphans
+
+      - name: Wait until healthy
+        run: |
+          url="http://${APP_NAME}-${APP_ENV}:3000/${APP_NAME}/health"
+          deadline=$((SECONDS + 60))
+          while ((SECONDS < deadline)); do
+            if docker run --rm --network web busybox:1.37 wget -qO /dev/null "$url" 2>/dev/null; then
+              echo "Healthy: /${APP_NAME}/ is live on ${APP_ENV}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::App did not answer /${APP_NAME}/health within 60 seconds"
+          docker compose ps
+          docker compose logs --tail 50
+          exit 1
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f .env
+          docker image prune -f
