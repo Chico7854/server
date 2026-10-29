@@ -1,0 +1,62 @@
+# Copy to .github/workflows/deploy.yml in an app repo and set APP_NAME.
+#
+#   pull request        -> tests only
+#   push to main        -> tests, then deploy to test
+#   push tag v1.2.3     -> tests, then deploy that exact commit to production
+
+name: CI/CD
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+env:
+  # Lowercase letters, digits and dashes. The app is served at /<APP_NAME>/.
+  APP_NAME: my-app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: echo "Replace this with the app's test command (npm test, pytest, ...)"
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: [self-hosted, home-server]
+    environment: ${{ github.ref_type == 'tag' && 'production' || 'test' }}
+    env:
+      APP_ENV: ${{ github.ref_type == 'tag' && 'prod' || 'test' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write .env from the environment's DOTENV secret
+        env:
+          DOTENV: ${{ secrets.DOTENV }}
+        run: printf '%s\n' "$DOTENV" > .env
+
+      - name: Build and start
+        run: docker compose up -d --build --remove-orphans
+
+      - name: Wait until healthy
+        run: |
+          for i in $(seq 1 30); do
+            if docker run --rm --network web busybox:1.37 \
+                wget -qO- "http://${APP_NAME}-${APP_ENV}:3000/${APP_NAME}/health"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App did not answer /${APP_NAME}/health within 60s" >&2
+          docker compose logs --tail 50 app
+          exit 1
+
+      - name: Clean up
+        if: always()
+        run: |
+          rm -f .env
+          docker image prune -f
