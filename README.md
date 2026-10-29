@@ -47,13 +47,37 @@ Uploads can be up to 20 MB and requests can take up to 5 minutes.
 | Small example app | `examples/sample-app/` |
 | Automated tests | `tests/`, run by `.github/workflows/ci.yml` |
 
-## Starting it
+## First-time setup on the notebook
 
-```bash
-docker compose up -d
-```
+1. **Install Ubuntu Server** by following the install guide. This setup runs Nginx inside
+   Docker, so if the guide installed Nginx directly on Ubuntu, turn that one off:
+   ```bash
+   sudo systemctl disable --now nginx
+   ```
+2. **Clone this repo and install Docker:**
+   ```bash
+   git clone https://github.com/Chico7854/server.git ~/server
+   cd ~/server
+   ./scripts/install-docker.sh
+   ```
+   If the repo is private, `git clone` asks for your GitHub username and a
+   [personal access token](https://github.com/settings/tokens) (not your password).
+   When the script finishes, **log out and back in** so you can run `docker` without `sudo`.
+3. **Start everything:**
+   ```bash
+   cd ~/server
+   docker compose up -d
+   ```
+   This starts the front door and both tunnels. They all restart on their own after
+   a reboot or power cut.
+4. **Get the public URLs:**
+   ```bash
+   ./scripts/urls.sh
+   ```
+   Open each URL in a browser. The prod one should say `Server is running (prod)`
+   and the test one `Server is running (test)`.
 
-Every container restarts on its own after a reboot.
+To update the server later: `cd ~/server && git pull && docker compose up -d`.
 
 ## Finding the URLs
 
@@ -118,3 +142,29 @@ Every pull request and every push to `main` runs these on GitHub:
   containers and database.
 
 You can run them yourself on any machine with Docker, for example `./tests/routing-test.sh`.
+
+## Not set up yet
+
+- **Backups.** Databases are **not** backed up. Add backups before storing data you can't lose.
+- **Domain.** URLs are random and change on every restart until a domain is added.
+
+## Troubleshooting
+
+| Symptom | What to do |
+| --- | --- |
+| `urls.sh` says *not ready yet* | The tunnel is still connecting. Wait 10 seconds and run it again. If it stays that way, check `docker compose logs tunnel-prod` (or `tunnel-test`); a restart with `docker compose restart tunnel-prod` gives it a new URL. |
+| `urls.sh` says *tunnel is not running* | Run `docker compose up -d` in `~/server`, then `docker compose ps` to see what's up. |
+| Old URL stopped working | The notebook or tunnel restarted, so the URL changed. Run `./scripts/urls.sh` again. |
+| `App 'x' is not running in prod` | The app isn't deployed to that environment, or its container stopped. Run `docker ps` and check the app repo's Actions tab. |
+| `permission denied ... docker.sock` | Your user isn't in the `docker` group yet. Log out and back in after `install-docker.sh`. |
+
+## Manual smoke test
+
+GitHub tests the routing automatically, but the tunnels can only be checked on the
+notebook. After setup, or after changing anything here:
+
+- [ ] `docker compose up -d` starts `nginx`, `tunnel-prod` and `tunnel-test` (`docker compose ps`)
+- [ ] `./scripts/urls.sh` prints a `prod` and a `test` URL
+- [ ] The prod URL shows `Server is running (prod)`, the test URL `Server is running (test)`
+- [ ] `<url>/healthz` shows `ok prod` / `ok test`
+- [ ] After `sudo reboot`, everything comes back by itself (URLs will be new)
